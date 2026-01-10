@@ -1,0 +1,22 @@
+# Requirements for WhisPlay HAT LLM Assistant
+
+# Core dependencies
+Pillow>=9.0.0
+numpy>=1.21.0
+
+# LLM - llama-cpp-python (requires cmake and build tools)
+# Install with: pip install llama-cpp-python
+# Or from source if needed: CMAKE_ARGS="-DLLAMA_BLAS=ON -DLLAMA_BLAS_VENDOR=OpenBLAS" pip install llama-cpp-python
+llama-cpp-python>=0.2.0
+
+# Speech-to-Text options (choose one):
+# Option 1: OpenAI Whisper (easier to install, downloads models automatically)
+openai-whisper>=20231117
+
+# Option 2: whisper.cpp (faster, lighter, but needs to be built separately)
+# Download and build from: https://github.com/ggerganov/whisper.cpp
+# Then place the 'main' binary in the whisper.cpp/ subdirectory
+
+# Audio recording (usually pre-installed on Raspberry Pi with ALSA)
+# But if needed: sudo apt-get install python3-pyaudio portaudio19-dev
+
