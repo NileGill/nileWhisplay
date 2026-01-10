@@ -247,7 +247,7 @@ def get_llm_response(prompt):
 
 def process_question():
     """Main processing function: record, transcribe, get LLM response, display."""
-    global is_processing, recording_process
+    global is_processing, recording_process, recording
     
     if is_processing:
         print("Already processing, please wait...")
@@ -257,15 +257,25 @@ def process_question():
     board.set_rgb(255, 255, 0)  # Yellow - processing
     
     try:
-        # Step 1: Display "Recording..." message
-        display_text_on_screen("Recording...\nHold button to record\nRelease when done")
+        # Step 1: Wait for recording to finish if still active
+        if recording and recording_process:
+            try:
+                while recording_process.poll() is None:
+                    time.sleep(0.1)
+                recording_process.wait()
+                time.sleep(0.5)  # Give file system time to write
+            except Exception as e:
+                print(f"Error waiting for recording: {e}")
         
-        # Step 2: Wait for button release to finish recording
-        while recording and recording_process and recording_process.poll() is None:
-            time.sleep(0.1)
+        recording = False  # Mark recording as complete
         
-        if recording_process:
-            recording_process.wait()
+        # Step 2: Check if recording file exists
+        if not os.path.exists(RECORD_FILE) or os.path.getsize(RECORD_FILE) == 0:
+            display_text_on_screen("Error: No audio\nrecorded.\nPlease try again.")
+            board.set_rgb(255, 0, 0)  # Red - error
+            time.sleep(2)
+            board.set_rgb(0, 0, 255)  # Blue - ready
+            return
         
         # Step 3: Display "Processing..." message
         display_text_on_screen("Processing...\nTranscribing audio")
@@ -281,14 +291,16 @@ def process_question():
             return
         
         print(f"Transcribed: {transcription}")
-        display_text_on_screen(f"Question:\n{transcription[:100]}\n\nProcessing...")
+        display_text_on_screen(f"Question:\n{transcription[:80]}\n\nProcessing LLM...")
         
-        # Step 5: Get LLM response
+        # Step 4: Get LLM response
         answer = get_llm_response(transcription)
         
         if answer:
-            # Step 6: Display answer
-            display_text_on_screen(f"Q: {transcription[:30]}...\n\nA: {answer}")
+            # Step 5: Display answer
+            # Truncate for display if too long
+            display_text = f"Q: {transcription[:40]}\n\nA: {answer[:300]}"
+            display_text_on_screen(display_text)
             board.set_rgb(0, 255, 0)  # Green - success
             time.sleep(1)
         else:
@@ -375,8 +387,12 @@ def main():
         while True:
             current_time = time.time()
             
-            # Check current button state
-            button_currently_pressed = board.button_pressed()
+            # Check current button state (with error handling)
+            try:
+                button_currently_pressed = board.button_pressed()
+            except Exception as e:
+                print(f"Error reading button state: {e}")
+                button_currently_pressed = False
             
             # Check if button was held long enough to start recording
             if button_currently_pressed and button_press_time > 0 and not recording and not is_processing:
@@ -385,28 +401,40 @@ def main():
                     print("Hold threshold reached - starting recording")
                     recording = True
                     board.set_rgb(255, 0, 0)  # Red - recording
-                    recording_process = subprocess.Popen([
-                        'arecord',
-                        '-D', 'hw:wm8960soundcard',
-                        '-f', 'S16_LE',
-                        '-r', '16000',
-                        '-c', '2',
-                        RECORD_FILE
-                    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    try:
+                        recording_process = subprocess.Popen([
+                            'arecord',
+                            '-D', 'hw:wm8960soundcard',
+                            '-f', 'S16_LE',
+                            '-r', '16000',
+                            '-c', '2',
+                            RECORD_FILE
+                        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    except Exception as e:
+                        print(f"Error starting recording: {e}")
+                        recording = False
+                        board.set_rgb(255, 0, 0)  # Red - error
+                        time.sleep(1)
+                        board.set_rgb(0, 0, 255)  # Blue - ready
             elif not button_currently_pressed and button_press_time > 0:
                 # Button was released but callback might have missed it
                 button_press_time = 0
             
             # Check if recording process is still running (max duration reached)
             if recording and recording_process:
-                if recording_process.poll() is not None:
-                    # Recording finished (probably max duration reached)
+                try:
+                    if recording_process.poll() is not None:
+                        # Recording finished (probably max duration reached)
+                        recording = False
+                        button_press_time = 0
+                        if not is_processing:
+                            thread = threading.Thread(target=process_question)
+                            thread.daemon = True
+                            thread.start()
+                except Exception as e:
+                    print(f"Error checking recording process: {e}")
                     recording = False
                     button_press_time = 0
-                    if not is_processing:
-                        thread = threading.Thread(target=process_question)
-                        thread.daemon = True
-                        thread.start()
             
             time.sleep(0.1)
             
