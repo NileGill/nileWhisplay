@@ -355,7 +355,7 @@ def on_button_released():
 
 def main():
     """Main function."""
-    global board, recording, recording_process
+    global board, recording, recording_process, button_press_time, is_processing
     
     print("Initializing WhisPlay HAT LLM Assistant...")
     
