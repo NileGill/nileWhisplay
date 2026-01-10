@@ -1,6 +1,9 @@
 from PIL import Image
 import sys
 import os
+import time
+import pygame
+import subprocess
 
 # Add the Driver directory to the path to import WhisPlayBoard
 sys.path.append(os.path.abspath("../Driver"))
@@ -14,6 +17,11 @@ except ImportError:
 # Initialize the board
 board = WhisPlayBoard()
 board.set_backlight(50)
+
+# Initialize pygame mixer for sound playback
+pygame.mixer.init()
+sound = None  # Global sound variable
+playing = False  # Global variable to track if sound is playing
 
 def load_image_as_rgb565(filepath, screen_width, screen_height):
     """Load and convert an image to RGB565 format for the display."""
@@ -53,6 +61,48 @@ def load_image_as_rgb565(filepath, screen_width, screen_height):
 
     return pixel_data
 
+def set_wm8960_volume_stable(volume_level: str):
+    """
+    Sets the 'Speaker' volume for the wm8960 sound card using the amixer command.
+    
+    Args:
+        volume_level (str): The desired volume value, e.g., '90%' or '121'.
+    """
+    CARD_NAME = 'wm8960soundcard'
+    CONTROL_NAME = 'Speaker'
+    DEVICE_ARG = f'hw:{CARD_NAME}'
+    
+    command = [
+        'amixer',
+        '-D', DEVICE_ARG,
+        'sset',
+        CONTROL_NAME,
+        volume_level
+    ]
+    
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True)
+        print(f"INFO: Successfully set '{CONTROL_NAME}' volume to {volume_level} on card '{CARD_NAME}'.")
+    except subprocess.CalledProcessError as e:
+        print(f"WARNING: Failed to set volume (this is okay if sound card isn't configured).", file=sys.stderr)
+    except FileNotFoundError:
+        print("WARNING: 'amixer' command not found. Volume setting skipped.", file=sys.stderr)
+
+def on_button_pressed():
+    """Callback function when the button is pressed - plays the sound file."""
+    global sound, playing
+    print("Button pressed!")
+    
+    if sound:
+        if playing:
+            sound.stop()  # Stop the current sound if it's playing
+            print("Stopping current sound...")
+        sound.play()  # Play the sound from the beginning
+        print("Playing sound...")
+        playing = True  # Set the playing flag
+    else:
+        print("Sound not loaded.")
+
 # Look for image1 with common extensions
 image_name = "image1"
 image_extensions = [".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG"]
@@ -74,27 +124,60 @@ if image_path is None:
     board.cleanup()
     sys.exit(1)
 
+# Look for sound1 with common audio extensions
+sound_name = "sound1"
+sound_extensions = [".mp3", ".wav", ".ogg", ".MP3", ".WAV", ".OGG"]
+sound_path = None
+
+# Try to find the sound file
+for ext in sound_extensions:
+    potential_path = os.path.join(script_dir, sound_name + ext)
+    if os.path.exists(potential_path):
+        sound_path = potential_path
+        break
+
+# Load the sound file if found
+if sound_path:
+    try:
+        sound = pygame.mixer.Sound(sound_path)
+        print(f"Sound {os.path.basename(sound_path)} loaded successfully.")
+        set_wm8960_volume_stable("121")  # Set volume (may fail gracefully if sound card not configured)
+    except Exception as e:
+        print(f"Warning: Failed to load sound from {sound_path}: {e}")
+        print("Button will not play sound, but image will still display.")
+        sound = None
+else:
+    print(f"Info: Could not find sound1 with extensions {sound_extensions}")
+    print(f"Button will not play sound. Place a file named 'sound1' (with extension .mp3, .wav, or .ogg) in the {script_dir} folder to enable sound.")
+
+# Register button callback
+board.on_button_press(on_button_pressed)
+
 # Load and display the image
 try:
     print(f"Loading image: {os.path.basename(image_path)}")
     image_data = load_image_as_rgb565(image_path, board.LCD_WIDTH, board.LCD_HEIGHT)
     board.draw_image(0, 0, board.LCD_WIDTH, board.LCD_HEIGHT, image_data)
     print(f"Image displayed successfully on the screen!")
-    print("Press Ctrl+C to exit...")
+    print("Press the button to play sound, or Ctrl+C to exit...")
     
     # Keep the program running so the image stays on screen
     try:
         while True:
-            import time
-            time.sleep(1)
+            # Check if the sound has finished playing and update the 'playing' flag
+            if playing and not pygame.mixer.get_busy():
+                playing = False
+            time.sleep(0.1)
     except KeyboardInterrupt:
         print("\nExiting...")
         
 except Exception as e:
     print(f"Error loading or displaying image: {e}")
     board.cleanup()
+    pygame.mixer.quit()
     sys.exit(1)
 
 finally:
     board.cleanup()
+    pygame.mixer.quit()  # Quit the mixer
 
