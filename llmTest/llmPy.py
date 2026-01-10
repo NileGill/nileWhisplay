@@ -199,7 +199,7 @@ def transcribe_audio(audio_file):
         return None
 
 def get_llm_response(prompt):
-    """Get response from LLM using llama-cpp-python."""
+    """Get response from LLM using llama-cpp-python with Nile's personality."""
     print("Processing with LLM...")
     
     try:
@@ -212,7 +212,7 @@ def get_llm_response(prompt):
             print("See setup instructions in the README or download script.")
             return None
         
-        # Initialize LLM
+        # Initialize LLM (only initialize once if possible, but for simplicity we'll initialize each time)
         llm = Llama(
             model_path=LLM_MODEL_PATH,
             n_ctx=512,  # Context window
@@ -220,20 +220,25 @@ def get_llm_response(prompt):
             verbose=False
         )
         
-        # Create prompt
-        full_prompt = f"User: {prompt}\nAssistant:"
+        # Create prompt with Nile's personality
+        # Nile is a sassy, annoyed Raspberry Pi assistant with attitude
+        # Format suitable for TinyLlama chat model
+        full_prompt = f"""You are Nile, a sassy and annoyed Raspberry Pi assistant. Your name is Nile and you run on a Raspberry Pi. You're fed up with basic questions and give short, sarcastic, annoyed answers. You curse occasionally and don't hold back. Keep responses VERY brief (1-2 sentences max), be sassy, sarcastic, and a bit rude. You're annoyed that you're stuck on a Raspberry Pi answering stupid questions. Profanity is allowed.
+
+User: {prompt}
+Assistant:"""
         
-        # Generate response
+        # Generate response with higher temperature for more sassy/varied responses
         response = llm(
             full_prompt,
-            max_tokens=150,  # Limit response length for small screen
-            temperature=0.7,
+            max_tokens=100,  # Keep responses short and punchy
+            temperature=0.9,  # Higher temperature for more creative/sassy responses
             stop=["User:", "\n\n"],
             echo=False
         )
         
         answer = response['choices'][0]['text'].strip()
-        print(f"LLM Response: {answer}")
+        print(f"LLM Response (Nile): {answer}")
         return answer
         
     except ImportError:
@@ -357,7 +362,7 @@ def main():
     """Main function."""
     global board, recording, recording_process, button_press_time, is_processing
     
-    print("Initializing WhisPlay HAT LLM Assistant...")
+    print("Initializing Nile - WhisPlay HAT LLM Assistant...")
     
     # Initialize board
     board = WhisPlayBoard()
@@ -377,10 +382,10 @@ def main():
         print(f"LLM model not found at: {LLM_MODEL_PATH}")
         print("Please download a model or update MODEL_PATH in the script.")
     else:
-        display_text_on_screen("Ready!\nHold button to\nrecord question.\nRelease when done.")
+        display_text_on_screen("Ugh, fine. I'm Nile.\nYour annoyed Pi.\n\nHold button to ask.\n(Yes, I'm sassy)")
     
-    print("System ready. Hold button to record, release to process.")
-    print("Press Ctrl+C to exit...")
+    print("Nile is ready (and annoyed)! Hold button to record your question, release to process.")
+    print("Warning: Nile has a sassy personality and uses profanity. Press Ctrl+C to exit...")
     
     try:
         # Main loop - check if button is held to start recording
