@@ -26,6 +26,10 @@ playing = False  # Global variable to track if sound is playing
 last_button_press_time = 0  # Track time of last button press for double-tap detection
 double_tap_threshold = 0.5  # Time window in seconds for double-tap detection (500ms)
 pending_single_tap = False  # Flag to track if we're waiting to confirm a single tap
+led_flash_state = False  # Track LED flash state (for flashing red)
+last_led_flash_time = 0  # Track time of last LED flash
+led_flash_interval = 0.3  # LED flash interval in seconds (300ms)
+led_state_changed = True  # Track if LED state needs updating
 
 def load_image_as_rgb565(filepath, screen_width, screen_height):
     """Load and convert an image to RGB565 format for the display."""
@@ -94,7 +98,7 @@ def set_wm8960_volume_stable(volume_level: str):
 
 def play_sound(sound_obj, sound_name):
     """Helper function to play a sound file."""
-    global playing
+    global playing, led_flash_state, led_state_changed, last_led_flash_time
     if sound_obj:
         if playing:
             # Stop any currently playing sound
@@ -103,6 +107,10 @@ def play_sound(sound_obj, sound_name):
         sound_obj.play()
         print(f"Playing {sound_name}...")
         playing = True
+        led_flash_state = True  # Start with LED on for flashing
+        led_state_changed = True  # LED state changed to playing
+        last_led_flash_time = time.time()  # Initialize flash timer
+        board.set_rgb(255, 0, 0)  # Immediately set to red when sound starts
     else:
         print(f"{sound_name} not loaded.")
 
@@ -215,12 +223,34 @@ try:
         print("Single tap button: play sound1 | Double tap button: play sound2")
     print("Press Ctrl+C to exit...")
     
+    # Initialize LED to blue (not playing state)
+    board.set_rgb(0, 0, 255)  # Blue
+    
     # Keep the program running so the image stays on screen
     try:
         while True:
+            current_time = time.time()
+            
             # Check if the sound has finished playing and update the 'playing' flag
             if playing and not pygame.mixer.get_busy():
                 playing = False
+                led_state_changed = True  # LED needs to change to blue
+            
+            # Handle RGB LED flashing
+            if playing:
+                # Sound is playing - flash red
+                if current_time - last_led_flash_time >= led_flash_interval:
+                    led_flash_state = not led_flash_state
+                    if led_flash_state:
+                        board.set_rgb(255, 0, 0)  # Red on
+                    else:
+                        board.set_rgb(0, 0, 0)  # LED off (for flashing effect)
+                    last_led_flash_time = current_time
+            else:
+                # Sound is not playing - solid blue (only set once when state changes)
+                if led_state_changed:
+                    board.set_rgb(0, 0, 255)  # Blue
+                    led_state_changed = False
             
             # Handle delayed single tap detection
             if pending_single_tap and last_button_press_time > 0:
@@ -243,6 +273,8 @@ except Exception as e:
     sys.exit(1)
 
 finally:
+    # Turn off LED before cleanup
+    board.set_rgb(0, 0, 0)
     board.cleanup()
     pygame.mixer.quit()  # Quit the mixer
 
