@@ -20,8 +20,12 @@ board.set_backlight(50)
 
 # Initialize pygame mixer for sound playback
 pygame.mixer.init()
-sound = None  # Global sound variable
+sound1 = None  # Global sound variable for sound1
+sound2 = None  # Global sound variable for sound2
 playing = False  # Global variable to track if sound is playing
+last_button_press_time = 0  # Track time of last button press for double-tap detection
+double_tap_threshold = 0.5  # Time window in seconds for double-tap detection (500ms)
+pending_single_tap = False  # Flag to track if we're waiting to confirm a single tap
 
 def load_image_as_rgb565(filepath, screen_width, screen_height):
     """Load and convert an image to RGB565 format for the display."""
@@ -88,20 +92,43 @@ def set_wm8960_volume_stable(volume_level: str):
     except FileNotFoundError:
         print("WARNING: 'amixer' command not found. Volume setting skipped.", file=sys.stderr)
 
-def on_button_pressed():
-    """Callback function when the button is pressed - plays the sound file."""
-    global sound, playing
-    print("Button pressed!")
-    
-    if sound:
+def play_sound(sound_obj, sound_name):
+    """Helper function to play a sound file."""
+    global playing
+    if sound_obj:
         if playing:
-            sound.stop()  # Stop the current sound if it's playing
+            # Stop any currently playing sound
+            pygame.mixer.stop()
             print("Stopping current sound...")
-        sound.play()  # Play the sound from the beginning
-        print("Playing sound...")
-        playing = True  # Set the playing flag
+        sound_obj.play()
+        print(f"Playing {sound_name}...")
+        playing = True
     else:
-        print("Sound not loaded.")
+        print(f"{sound_name} not loaded.")
+
+def on_button_pressed():
+    """Callback function when the button is pressed - detects single or double tap and plays appropriate sound."""
+    global last_button_press_time, pending_single_tap, sound1, sound2, playing
+    
+    current_time = time.time()
+    
+    # Check if this is a double tap (button pressed within threshold time of previous press)
+    if last_button_press_time > 0:
+        time_since_last_press = current_time - last_button_press_time
+        
+        if time_since_last_press < double_tap_threshold and pending_single_tap:
+            # This is a double tap!
+            print("Double tap detected!")
+            pending_single_tap = False  # Cancel the pending single tap
+            play_sound(sound2, "sound2")
+            last_button_press_time = 0  # Reset to prevent triple-tap detection
+            return
+    
+    # This might be a single tap, but we need to wait to confirm no second press comes
+    # Set a flag and the main loop will check after threshold time
+    pending_single_tap = True
+    last_button_press_time = current_time
+    print("Button pressed (waiting to confirm single/double tap)...")
 
 # Look for image1 with common extensions
 image_name = "image1"
@@ -125,30 +152,55 @@ if image_path is None:
     sys.exit(1)
 
 # Look for sound1 with common audio extensions
-sound_name = "sound1"
+sound1_name = "sound1"
 sound_extensions = [".mp3", ".wav", ".ogg", ".MP3", ".WAV", ".OGG"]
-sound_path = None
+sound1_path = None
 
-# Try to find the sound file
+# Try to find sound1 file
 for ext in sound_extensions:
-    potential_path = os.path.join(script_dir, sound_name + ext)
+    potential_path = os.path.join(script_dir, sound1_name + ext)
     if os.path.exists(potential_path):
-        sound_path = potential_path
+        sound1_path = potential_path
         break
 
-# Load the sound file if found
-if sound_path:
+# Load sound1 file if found
+if sound1_path:
     try:
-        sound = pygame.mixer.Sound(sound_path)
-        print(f"Sound {os.path.basename(sound_path)} loaded successfully.")
+        sound1 = pygame.mixer.Sound(sound1_path)
+        print(f"Sound1 {os.path.basename(sound1_path)} loaded successfully.")
         set_wm8960_volume_stable("121")  # Set volume (may fail gracefully if sound card not configured)
     except Exception as e:
-        print(f"Warning: Failed to load sound from {sound_path}: {e}")
-        print("Button will not play sound, but image will still display.")
-        sound = None
+        print(f"Warning: Failed to load sound1 from {sound1_path}: {e}")
+        sound1 = None
 else:
     print(f"Info: Could not find sound1 with extensions {sound_extensions}")
-    print(f"Button will not play sound. Place a file named 'sound1' (with extension .mp3, .wav, or .ogg) in the {script_dir} folder to enable sound.")
+    print(f"Single tap will not play sound. Place a file named 'sound1' (with extension .mp3, .wav, or .ogg) in the {script_dir} folder to enable it.")
+
+# Look for sound2 with common audio extensions
+sound2_name = "sound2"
+sound2_path = None
+
+# Try to find sound2 file
+for ext in sound_extensions:
+    potential_path = os.path.join(script_dir, sound2_name + ext)
+    if os.path.exists(potential_path):
+        sound2_path = potential_path
+        break
+
+# Load sound2 file if found
+if sound2_path:
+    try:
+        sound2 = pygame.mixer.Sound(sound2_path)
+        print(f"Sound2 {os.path.basename(sound2_path)} loaded successfully.")
+    except Exception as e:
+        print(f"Warning: Failed to load sound2 from {sound2_path}: {e}")
+        sound2 = None
+else:
+    print(f"Info: Could not find sound2 with extensions {sound_extensions}")
+    print(f"Double tap will not play sound. Place a file named 'sound2' (with extension .mp3, .wav, or .ogg) in the {script_dir} folder to enable it.")
+
+if sound1 is None and sound2 is None:
+    print("No sound files loaded. Button presses will not play any sound.")
 
 # Register button callback
 board.on_button_press(on_button_pressed)
@@ -159,7 +211,9 @@ try:
     image_data = load_image_as_rgb565(image_path, board.LCD_WIDTH, board.LCD_HEIGHT)
     board.draw_image(0, 0, board.LCD_WIDTH, board.LCD_HEIGHT, image_data)
     print(f"Image displayed successfully on the screen!")
-    print("Press the button to play sound, or Ctrl+C to exit...")
+    if sound1 or sound2:
+        print("Single tap button: play sound1 | Double tap button: play sound2")
+    print("Press Ctrl+C to exit...")
     
     # Keep the program running so the image stays on screen
     try:
@@ -167,7 +221,18 @@ try:
             # Check if the sound has finished playing and update the 'playing' flag
             if playing and not pygame.mixer.get_busy():
                 playing = False
-            time.sleep(0.1)
+            
+            # Handle delayed single tap detection
+            if pending_single_tap and last_button_press_time > 0:
+                time_since_press = time.time() - last_button_press_time
+                if time_since_press >= double_tap_threshold:
+                    # No second press came within the threshold, so this was a single tap
+                    print("Single tap detected!")
+                    play_sound(sound1, "sound1")
+                    pending_single_tap = False
+                    last_button_press_time = 0  # Reset for next detection cycle
+            
+            time.sleep(0.05)  # Check more frequently for better double-tap detection
     except KeyboardInterrupt:
         print("\nExiting...")
         
