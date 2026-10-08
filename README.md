@@ -1,6 +1,6 @@
 [English](README.md) | [中文](README_CN.md)
 
-# PiSugar Whisplay Hat Driver
+# PiSugar Whisplay Hat Driver.
 
 ## Project Overview
 
