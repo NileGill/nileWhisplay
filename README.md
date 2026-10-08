@@ -2,7 +2,7 @@
 
 # PiSugar Whisplay Hat Driver.
 
-## Project Overview
+## Project Overview.
 
 This project provides comprehensive driver support for the **PiSugar Whisplay Hat**, enabling easy control of the onboard LCD screen, physical buttons, LED indicators, and audio functions.
 
