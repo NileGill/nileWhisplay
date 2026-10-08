@@ -16,7 +16,7 @@ The device utilizes **I2C, SPI, and I2S** buses. The **I2S and I2C buses** are u
 
 ---
 
-### Installation
+### Installation.
 
 After cloning the github project, navigate to the Driver directory and use the script to install.
 
